@@ -1,0 +1,17 @@
+name = "nexus-assistant-worker"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+# Plain config (safe to commit). Secrets below are NOT set here.
+[vars]
+FIREBASE_PROJECT_ID = "nexus-web-development-official"
+OWNER_EMAIL = "brodywilliams0226@gmail.com"
+CLAUDE_MODEL = "claude-sonnet-5-5"
+# Optional: the Composio entity/user id your connected accounts live under.
+# Leave unset (defaults to "default") if you only ever connect one set of accounts.
+# COMPOSIO_USER_ID = "brody"
+
+# Set these with `wrangler secret put <NAME>` - never put real key values in this file:
+#   wrangler secret put ANTHROPIC_API_KEY
+#   wrangler secret put GITHUB_TOKEN
+#   wrangler secret put COMPOSIO_API_KEY
