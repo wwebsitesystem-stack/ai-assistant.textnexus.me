@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Nexus AI Assistant Control Center</title>
-    
+
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
     <script src="https://cdn.tailwindcss.com"></script>
@@ -70,7 +70,8 @@
                     <ul class="list-disc list-inside mt-2 space-y-1 text-xs text-textMain">
                         <li>"How many people visited Nexus today?"</li>
                         <li>"Who has recently tried to enter Nexus AI assistant?"</li>
-                        <li>"Send an email to user@example.com using Composio..."</li>
+                        <li>"What are my 5 most recently updated GitHub repos?"</li>
+                        <li>"Do I have any unread email from my boss?"</li>
                     </ul>
                 </div>
             </div>
@@ -122,7 +123,12 @@
         function speak(text) {
             if ('speechSynthesis' in window) {
                 window.speechSynthesis.cancel();
-                const cleanText = text.replace(/<[^>]*>?/gm, '');
+                // Strip HTML tags and stray markdown so the worker's reply reads naturally out loud.
+                const cleanText = text
+                    .replace(/<[^>]*>?/gm, '')
+                    .replace(/[*_#`]/g, '')
+                    .replace(/\s+/g, ' ')
+                    .trim();
                 const utterance = new SpeechSynthesisUtterance(cleanText);
                 utterance.rate = 1.0;
                 utterance.pitch = 1.0;
@@ -148,7 +154,7 @@
             if (user) {
                 const userEmail = (user.email || "").toLowerCase();
                 userEmailDisplay.textContent = user.email;
-                
+
                 // Audit Log attempt into Firebase
                 try {
                     const logRef = push(ref(db, 'nexus/login_attempts'));
@@ -192,7 +198,7 @@
 
             recognition.onresult = (event) => {
                 const transcript = event.results[event.results.length - 1][0].transcript.toLowerCase().trim();
-                
+
                 if (transcript.includes('hey nexus')) {
                     speak("Yes Brody, I am listening.");
                     userInput.focus();
@@ -241,21 +247,37 @@
                 return;
             }
 
-            // Route through Cloudflare Worker (xKiro AI & Composio)
+            // Route through Cloudflare Worker (Claude + Composio + GitHub)
             try {
+                if (!auth.currentUser) {
+                    appendAssistantReply("You're not signed in, so I can't reach the worker.");
+                    return;
+                }
+
+                // A fresh ID token proves to the worker that this request really
+                // came from the signed-in owner, not just anyone who found the
+                // worker's URL in the page source.
+                const idToken = await auth.currentUser.getIdToken();
+
                 const response = await fetch(WORKER_URL, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${idToken}`
+                    },
                     body: JSON.stringify({ prompt })
                 });
 
                 const data = await response.json();
                 if (response.ok) {
                     appendAssistantReply(data.reply);
+                } else if (response.status === 401) {
+                    appendAssistantReply("The worker rejected this request as unauthorized. Try signing out and back in.");
                 } else {
                     appendAssistantReply(`Error: ${data.error || "Could not process request."}`);
                 }
             } catch (err) {
+                console.error(err);
                 appendAssistantReply("Network connection error with worker.");
             }
         }
