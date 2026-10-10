@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nexus AI Assistant Control Center</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        background: '#0a0a0a',
+                        surface: '#121212',
+                        surfaceHover: '#1c1c1c',
+                        border: '#262626',
+                        textMain: '#ededed',
+                        textMuted: '#a1a1aa'
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="h-screen w-screen flex flex-col bg-background text-textMain antialiased overflow-hidden">
+
+    <!-- GOOGLE AUTH LOGIN GATE -->
+    <div id="auth-gate" class="fixed inset-0 z-50 bg-background/95 backdrop-blur-md flex flex-col items-center justify-center p-4">
+        <div class="bg-surface border border-border p-8 rounded-2xl shadow-2xl max-w-sm w-full flex flex-col gap-5 text-center">
+            <div class="w-12 h-12 rounded-full bg-surfaceHover border border-border flex items-center justify-center mx-auto text-textMain">
+                <i class="ph ph-shield-check text-2xl"></i>
+            </div>
+            <div>
+                <h3 class="text-lg font-semibold text-textMain">Nexus Assistant Login</h3>
+                <p class="text-xs text-textMuted mt-1">Authenticate with Google to access your private command center.</p>
+            </div>
+            <button id="google-login-btn" class="w-full py-3 bg-surfaceHover border border-border text-textMain rounded-xl text-xs font-semibold hover:bg-border transition-colors flex items-center justify-center gap-2">
+                <i class="ph ph-google-logo text-base"></i> Sign in with Google
+            </button>
+            <p id="auth-error" class="text-xs text-red-400 hidden"></p>
+        </div>
+    </div>
+
+    <!-- MAIN APP INTERFACE -->
+    <header class="h-16 border-b border-border flex items-center justify-between px-6 bg-surface shrink-0">
+        <div class="flex items-center gap-3">
+            <i class="ph ph-cpu text-emerald-400 text-xl"></i>
+            <h1 class="font-semibold text-sm">Nexus AI Operations Center</h1>
+        </div>
+        <div class="flex items-center gap-4">
+            <div id="mic-status" class="flex items-center gap-1.5 text-xs px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> Listening for "Hey Nexus"
+            </div>
+            <span id="user-email-display" class="text-xs text-textMuted font-mono"></span>
+            <button id="logout-btn" class="px-3 py-1.5 bg-surfaceHover border border-border text-xs text-textMuted hover:text-textMain rounded-lg transition-colors">Sign Out</button>
+        </div>
+    </header>
+
+    <div class="flex-1 flex overflow-hidden">
+        <!-- Chat & Command Interface -->
+        <main class="flex-1 flex flex-col bg-background max-w-4xl mx-auto w-full p-6 gap-4">
+            <div id="chat-history" class="flex-1 overflow-y-auto p-4 flex flex-col gap-4 bg-surface border border-border rounded-xl">
+                <div class="p-4 rounded-xl bg-surfaceHover border border-border text-sm text-textMuted leading-relaxed">
+                    Hello Brody! I am your Nexus AI Assistant. You can speak to me by saying <strong class="text-textMain">"Hey Nexus"</strong>, or type your commands below:
+                    <ul class="list-disc list-inside mt-2 space-y-1 text-xs text-textMain">
+                        <li>"How many people visited Nexus today?"</li>
+                        <li>"Who has recently tried to enter Nexus AI assistant?"</li>
+                        <li>"Edit Nexus repository..."</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-3 bg-surface border border-border p-2 rounded-xl">
+                <input type="text" id="user-input" placeholder="Type or say 'Hey Nexus'..." class="flex-1 bg-transparent border-none text-sm px-3 py-2 text-textMain outline-none placeholder:text-zinc-600">
+                <button id="send-btn" class="px-4 py-2 bg-textMain text-background rounded-lg text-xs font-semibold hover:opacity-90 transition-opacity flex items-center gap-1.5">
+                    <i class="ph ph-paper-plane-right text-sm"></i> Send
+                </button>
+            </div>
+        </main>
+    </div>
+
+    <!-- FIREBASE & VOICE ASSISTANT LOGIC -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getDatabase, ref, push, set, serverTimestamp, onValue } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyAO_ffupJOIMPE9m4ARtaqSzC1vGDkIAco",
+            authDomain: "nexus-web-development-official.firebaseapp.com",
+            databaseURL: "https://nexus-web-development-official-default-rtdb.firebaseio.com",
+            projectId: "nexus-web-development-official",
+            storageBucket: "nexus-web-development-official.firebasestorage.app",
+            messagingSenderId: "553556577139",
+            appId: "1:553556577139:web:67c4aebebb033acf999306",
+            measurementId: "G-5M518HQEX4"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getDatabase(app);
+
+        const OWNER_EMAIL = "brodywilliams0226@gmail.com";
+        const authGate = document.getElementById('auth-gate');
+        const googleLoginBtn = document.getElementById('google-login-btn');
+        const authError = document.getElementById('auth-error');
+        const userEmailDisplay = document.getElementById('user-email-display');
+        const logoutBtn = document.getElementById('logout-btn');
+        const chatHistory = document.getElementById('chat-history');
+        const userInput = document.getElementById('user-input');
+        const sendBtn = document.getElementById('send-btn');
+
+        // Text-to-Speech Function (Assistant speaks back)
+        function speak(text) {
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel(); // Stop any ongoing speech
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.rate = 1.0;
+                utterance.pitch = 1.0;
+                window.speechSynthesis.speak(utterance);
+            }
+        }
+
+        googleLoginBtn.addEventListener('click', async () => {
+            try {
+                await signInWithPopup(auth, new GoogleAuthProvider());
+            } catch (err) {
+                authError.textContent = err.message;
+                authError.classList.remove('hidden');
+            }
+        });
+
+        logoutBtn.addEventListener('click', () => signOut(auth));
+
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                userEmailDisplay.textContent = user.email;
+                
+                // Log visitor attempt to Firebase
+                const logRef = push(ref(db, 'nexus/login_attempts'));
+                await set(logRef, {
+                    email: user.email,
+                    name: user.displayName || 'Unknown',
+                    timestamp: serverTimestamp(),
+                    authorized: user.email === OWNER_EMAIL
+                });
+
+                if (user.email === OWNER_EMAIL) {
+                    authGate.classList.add('hidden');
+                    speak("Welcome back Brody. Systems are online.");
+                    initVoiceRecognition();
+                } else {
+                    authError.textContent = `Access Denied: ${user.email} is not authorized as owner.`;
+                    authError.classList.remove('hidden');
+                }
+            } else {
+                authGate.classList.remove('hidden');
+                userEmailDisplay.textContent = '';
+            }
+        });
+
+        // Initialize Speech Recognition & Wake Word ("Hey Nexus")
+        function initVoiceRecognition() {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SpeechRecognition) {
+                console.warn("Speech Recognition not supported in this browser.");
+                return;
+            }
+
+            const recognition = new SpeechRecognition();
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.lang = 'en-US';
+
+            recognition.onresult = (event) => {
+                const transcript = event.results[event.results.length - 1][0].transcript.toLowerCase().trim();
+                
+                // Check if wake word is spoken
+                if (transcript.includes('hey nexus')) {
+                    speak("Yes Brody, I'm listening. What would you like to do?");
+                    userInput.focus();
+                    userInput.placeholder = "Listening for your command...";
+                }
+            };
+
+            recognition.onerror = (event) => {
+                console.error("Speech recognition error", event.error);
+            };
+
+            // Automatically restart mic if it stops listening
+            recognition.onend = () => {
+                try { recognition.start(); } catch (e) {}
+            };
+
+            try {
+                recognition.start();
+            } catch (e) {
+                console.log("Mic already active");
+            }
+        }
+
+        // Process User Prompt (Text or Voice query)
+        async function handleCommand(prompt) {
+            if (!prompt) return;
+
+            chatHistory.innerHTML += `<div class="p-3 rounded-xl bg-surface border border-border text-textMain self-end max-w-[85%]">${prompt}</div>`;
+            userInput.value = '';
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+
+            if (prompt.toLowerCase().includes('who has recently tried')) {
+                onValue(ref(db, 'nexus/login_attempts'), (snapshot) => {
+                    const data = snapshot.val();
+                    if (!data) {
+                        const reply = "No login attempts recorded yet.";
+                        appendAssistantReply(reply);
+                        return;
+                    }
+                    const attempts = Object.values(data).reverse().slice(0, 5);
+                    let logText = "Here are the recent people who tried to enter Nexus:<br>";
+                    let speechText = "Here are the recent people who tried to enter Nexus: ";
+                    attempts.forEach(att => {
+                        logText += `- ${att.email} (${att.name})<br>`;
+                        speechText += `${att.email}, `;
+                    });
+                    appendAssistantReply(logText, speechText);
+                }, { onlyOnce: true });
+            } else {
+                const defaultReply = "I received your command. Connect this endpoint to your xKiro AI API worker to process this request!";
+                appendAssistantReply(defaultReply, defaultReply);
+            }
+        }
+
+        function appendAssistantReply(htmlText, speechText = "") {
+            chatHistory.innerHTML += `<div class="p-3 rounded-xl bg-surfaceHover border border-border text-textMain">${htmlText}</div>`;
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+            if (speechText) speak(speechText);
+        }
+
+        sendBtn.addEventListener('click', () => handleCommand(userInput.value.trim()));
+        userInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') handleCommand(userInput.value.trim());
+        });
+    </script>
+</body>
+</html>
