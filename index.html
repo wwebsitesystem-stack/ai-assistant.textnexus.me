@@ -70,7 +70,7 @@
                     <ul class="list-disc list-inside mt-2 space-y-1 text-xs text-textMain">
                         <li>"How many people visited Nexus today?"</li>
                         <li>"Who has recently tried to enter Nexus AI assistant?"</li>
-                        <li>"Edit Nexus repository to change styles..."</li>
+                        <li>"Send an email to user@example.com using Composio..."</li>
                     </ul>
                 </div>
             </div>
@@ -105,8 +105,9 @@
         const auth = getAuth(app);
         const db = getDatabase(app);
 
+        // Case-insensitive owner check
         const OWNER_EMAIL = "brodywilliams0226@gmail.com".toLowerCase();
-        const WORKER_URL = "https://hidden-sound-ba86.brodywilliams0226.workers.dev//"; // Replace with your Worker URL
+        const WORKER_URL = "https://little-unit-9bae.brodywilliams0226.workers.dev/";
 
         const authGate = document.getElementById('auth-gate');
         const googleLoginBtn = document.getElementById('google-login-btn');
@@ -117,11 +118,12 @@
         const userInput = document.getElementById('user-input');
         const sendBtn = document.getElementById('send-btn');
 
-        // Text-to-Speech Function
+        // Text-to-Speech Synthesizer
         function speak(text) {
             if ('speechSynthesis' in window) {
                 window.speechSynthesis.cancel();
-                const utterance = new SpeechSynthesisUtterance(text.replace(/<[^>]*>?/gm, '')); // Strip HTML tags before speaking
+                const cleanText = text.replace(/<[^>]*>?/gm, '');
+                const utterance = new SpeechSynthesisUtterance(cleanText);
                 utterance.rate = 1.0;
                 utterance.pitch = 1.0;
                 window.speechSynthesis.speak(utterance);
@@ -130,9 +132,12 @@
 
         googleLoginBtn.addEventListener('click', async () => {
             try {
-                await signInWithPopup(auth, new GoogleAuthProvider());
+                authError.classList.add('hidden');
+                const provider = new GoogleAuthProvider();
+                await signInWithPopup(auth, provider);
             } catch (err) {
-                authError.textContent = err.message;
+                console.error("Auth Popup Error:", err);
+                authError.textContent = `Sign in failed: ${err.message}`;
                 authError.classList.remove('hidden');
             }
         });
@@ -141,22 +146,28 @@
 
         onAuthStateChanged(auth, async (user) => {
             if (user) {
+                const userEmail = (user.email || "").toLowerCase();
                 userEmailDisplay.textContent = user.email;
                 
-                // Log visitor attempt to Firebase
-                const logRef = push(ref(db, 'nexus/login_attempts'));
-                await set(logRef, {
-                    email: user.email,
-                    name: user.displayName || 'Unknown',
-                    timestamp: serverTimestamp(),
-                    authorized: user.email === OWNER_EMAIL
-                });
+                // Audit Log attempt into Firebase
+                try {
+                    const logRef = push(ref(db, 'nexus/login_attempts'));
+                    await set(logRef, {
+                        email: user.email,
+                        name: user.displayName || 'Unknown',
+                        timestamp: serverTimestamp(),
+                        authorized: userEmail === OWNER_EMAIL
+                    });
+                } catch (logErr) {
+                    console.error("Database log error:", logErr);
+                }
 
-                if (user.email === OWNER_EMAIL) {
+                if (userEmail === OWNER_EMAIL) {
                     authGate.classList.add('hidden');
                     speak("Welcome back Brody. Systems are online.");
                     initVoiceRecognition();
                 } else {
+                    authGate.classList.remove('hidden');
                     authError.textContent = `Access Denied: ${user.email} is not authorized as owner.`;
                     authError.classList.remove('hidden');
                 }
@@ -200,11 +211,11 @@
             try {
                 recognition.start();
             } catch (e) {
-                console.log("Mic already active");
+                console.log("Mic active");
             }
         }
 
-        // Process User Commands (Local Audit vs Worker xKiro AI)
+        // Process User Commands
         async function handleCommand(prompt) {
             if (!prompt) return;
 
@@ -212,7 +223,7 @@
             userInput.value = '';
             chatHistory.scrollTop = chatHistory.scrollHeight;
 
-            // 1. Client-Side Query: Login Audit Attempts
+            // Client-Side Firebase Audit Query
             if (prompt.toLowerCase().includes('who has recently tried') || prompt.toLowerCase().includes('recent logins')) {
                 onValue(ref(db, 'nexus/login_attempts'), (snapshot) => {
                     const data = snapshot.val();
@@ -230,7 +241,7 @@
                 return;
             }
 
-            // 2. Cloudflare Worker Query (xKiro AI Routing)
+            // Route through Cloudflare Worker (xKiro AI & Composio)
             try {
                 const response = await fetch(WORKER_URL, {
                     method: 'POST',
