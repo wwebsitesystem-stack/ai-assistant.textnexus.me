@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Nexus AI Assistant Control Center</title>
+    
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
     <script src="https://cdn.tailwindcss.com"></script>
@@ -69,7 +70,7 @@
                     <ul class="list-disc list-inside mt-2 space-y-1 text-xs text-textMain">
                         <li>"How many people visited Nexus today?"</li>
                         <li>"Who has recently tried to enter Nexus AI assistant?"</li>
-                        <li>"Edit Nexus repository..."</li>
+                        <li>"Edit Nexus repository to change styles..."</li>
                     </ul>
                 </div>
             </div>
@@ -105,6 +106,8 @@
         const db = getDatabase(app);
 
         const OWNER_EMAIL = "brodywilliams0226@gmail.com";
+        const WORKER_URL = "https://little-unit-9bae.brodywilliams0226.workers.dev/"; // Replace with your Worker URL
+
         const authGate = document.getElementById('auth-gate');
         const googleLoginBtn = document.getElementById('google-login-btn');
         const authError = document.getElementById('auth-error');
@@ -114,11 +117,11 @@
         const userInput = document.getElementById('user-input');
         const sendBtn = document.getElementById('send-btn');
 
-        // Text-to-Speech Function (Assistant speaks back)
+        // Text-to-Speech Function
         function speak(text) {
             if ('speechSynthesis' in window) {
-                window.speechSynthesis.cancel(); // Stop any ongoing speech
-                const utterance = new SpeechSynthesisUtterance(text);
+                window.speechSynthesis.cancel();
+                const utterance = new SpeechSynthesisUtterance(text.replace(/<[^>]*>?/gm, '')); // Strip HTML tags before speaking
                 utterance.rate = 1.0;
                 utterance.pitch = 1.0;
                 window.speechSynthesis.speak(utterance);
@@ -163,7 +166,7 @@
             }
         });
 
-        // Initialize Speech Recognition & Wake Word ("Hey Nexus")
+        // Initialize Speech Recognition for "Hey Nexus" Wake Word
         function initVoiceRecognition() {
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
             if (!SpeechRecognition) {
@@ -179,19 +182,17 @@
             recognition.onresult = (event) => {
                 const transcript = event.results[event.results.length - 1][0].transcript.toLowerCase().trim();
                 
-                // Check if wake word is spoken
                 if (transcript.includes('hey nexus')) {
-                    speak("Yes Brody, I'm listening. What would you like to do?");
+                    speak("Yes Brody, I am listening.");
                     userInput.focus();
                     userInput.placeholder = "Listening for your command...";
                 }
             };
 
             recognition.onerror = (event) => {
-                console.error("Speech recognition error", event.error);
+                console.error("Speech recognition error:", event.error);
             };
 
-            // Automatically restart mic if it stops listening
             recognition.onend = () => {
                 try { recognition.start(); } catch (e) {}
             };
@@ -203,7 +204,7 @@
             }
         }
 
-        // Process User Prompt (Text or Voice query)
+        // Process User Commands (Local Audit vs Worker xKiro AI)
         async function handleCommand(prompt) {
             if (!prompt) return;
 
@@ -211,33 +212,47 @@
             userInput.value = '';
             chatHistory.scrollTop = chatHistory.scrollHeight;
 
-            if (prompt.toLowerCase().includes('who has recently tried')) {
+            // 1. Client-Side Query: Login Audit Attempts
+            if (prompt.toLowerCase().includes('who has recently tried') || prompt.toLowerCase().includes('recent logins')) {
                 onValue(ref(db, 'nexus/login_attempts'), (snapshot) => {
                     const data = snapshot.val();
                     if (!data) {
-                        const reply = "No login attempts recorded yet.";
-                        appendAssistantReply(reply);
+                        appendAssistantReply("No login attempts recorded yet.");
                         return;
                     }
                     const attempts = Object.values(data).reverse().slice(0, 5);
-                    let logText = "Here are the recent people who tried to enter Nexus:<br>";
-                    let speechText = "Here are the recent people who tried to enter Nexus: ";
+                    let logText = "Recent entry attempts to Nexus AI:<br>";
                     attempts.forEach(att => {
-                        logText += `- ${att.email} (${att.name})<br>`;
-                        speechText += `${att.email}, `;
+                        logText += `- <strong>${att.email}</strong> (${att.name})<br>`;
                     });
-                    appendAssistantReply(logText, speechText);
+                    appendAssistantReply(logText);
                 }, { onlyOnce: true });
-            } else {
-                const defaultReply = "I received your command. Connect this endpoint to your xKiro AI API worker to process this request!";
-                appendAssistantReply(defaultReply, defaultReply);
+                return;
+            }
+
+            // 2. Cloudflare Worker Query (xKiro AI Routing)
+            try {
+                const response = await fetch(WORKER_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt })
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    appendAssistantReply(data.reply);
+                } else {
+                    appendAssistantReply(`Error: ${data.error || "Could not process request."}`);
+                }
+            } catch (err) {
+                appendAssistantReply("Network connection error with worker.");
             }
         }
 
-        function appendAssistantReply(htmlText, speechText = "") {
-            chatHistory.innerHTML += `<div class="p-3 rounded-xl bg-surfaceHover border border-border text-textMain">${htmlText}</div>`;
+        function appendAssistantReply(text) {
+            chatHistory.innerHTML += `<div class="p-3 rounded-xl bg-surfaceHover border border-border text-textMain">${text}</div>`;
             chatHistory.scrollTop = chatHistory.scrollHeight;
-            if (speechText) speak(speechText);
+            speak(text);
         }
 
         sendBtn.addEventListener('click', () => handleCommand(userInput.value.trim()));
